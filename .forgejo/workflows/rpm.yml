@@ -1,0 +1,48 @@
+name: RPM
+
+# Builds anaconda-webui for Fedora rawhide (the base of quine-linux's
+# installer image, installer/Containerfile) and publishes it to this Forgejo
+# instance's RPM registry under the repo owner -- a self-hosted stand-in for
+# COPR. Consumers add:
+#   <server>/api/packages/<owner>/rpm.repo
+#
+# Needs a repo secret RPM_UPLOAD_TOKEN: an access token with write:package
+# scope for the owner the package is published under.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: rpm-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: registry.fedoraproject.org/fedora:rawhide
+    steps:
+      # actions/checkout is a node action; the Fedora image ships no node.
+      - name: Install checkout prerequisites
+        run: dnf -y install git nodejs
+
+      - uses: actions/checkout@v4
+        with:
+          # Full history: `git describe` sets the package version.
+          fetch-depth: 0
+
+      - name: Build RPMs
+        env:
+          RELEASE: ${{ github.run_number }}
+        run: .forgejo/build-rpm.sh
+
+      - name: Upload to package registry
+        env:
+          TOKEN: ${{ secrets.RPM_UPLOAD_TOKEN }}
+          UPLOAD_URL: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm/upload
+        run: |
+          for rpm in rpms/noarch/*.rpm; do
+            curl --fail-with-body -H "Authorization: token ${TOKEN}" --upload-file "$rpm" "$UPLOAD_URL"
+          done
