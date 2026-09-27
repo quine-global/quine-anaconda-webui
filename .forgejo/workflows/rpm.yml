@@ -47,10 +47,15 @@ jobs:
             echo "::error::RPM_UPLOAD_TOKEN secret is missing or empty"
             exit 1
           fi
-          # Fails early (and says so) if the token itself is rejected.
-          curl --fail-with-body -sS -H "Authorization: token ${TOKEN}" \
-            "${{ github.server_url }}/api/v1/user" | grep -o '"login":"[^"]*"' \
-            || { echo "::error::RPM_UPLOAD_TOKEN was rejected by ${{ github.server_url }}"; exit 1; }
+          # Fail early, and say so, if the token itself is rejected. A valid
+          # package-only token gets 403 (no user scope) here; only 401 means
+          # the token is unknown.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token ${TOKEN}" \
+            "${{ github.server_url }}/api/v1/user")
+          if [ "$code" = 401 ]; then
+            echo "::error::RPM_UPLOAD_TOKEN was rejected by ${{ github.server_url }}"
+            exit 1
+          fi
           for rpm in rpms/noarch/*.rpm; do
             curl --fail-with-body -H "Authorization: token ${TOKEN}" --upload-file "$rpm" "$UPLOAD_URL"
           done
