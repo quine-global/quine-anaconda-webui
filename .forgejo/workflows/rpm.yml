@@ -43,6 +43,14 @@ jobs:
           TOKEN: ${{ secrets.RPM_UPLOAD_TOKEN }}
           UPLOAD_URL: ${{ github.server_url }}/api/packages/${{ github.repository_owner }}/rpm/upload
         run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RPM_UPLOAD_TOKEN secret is missing or empty"
+            exit 1
+          fi
+          # Fails early (and says so) if the token itself is rejected.
+          curl --fail-with-body -sS -H "Authorization: token ${TOKEN}" \
+            "${{ github.server_url }}/api/v1/user" | grep -o '"login":"[^"]*"' \
+            || { echo "::error::RPM_UPLOAD_TOKEN was rejected by ${{ github.server_url }}"; exit 1; }
           for rpm in rpms/noarch/*.rpm; do
             curl --fail-with-body -H "Authorization: token ${TOKEN}" --upload-file "$rpm" "$UPLOAD_URL"
           done
